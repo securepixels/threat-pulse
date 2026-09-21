@@ -1,9 +1,10 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTheme } from './ThemeProvider'
 import { detectType } from '@/lib/detect'
 import { DEMO_DB, FEED_DATA } from '@/lib/demo-data'
 import { LookupResult } from '@/lib/types'
+import { supabase } from '@/lib/supabase'
 
 export function Dashboard() {
   const { toggle } = useTheme()
@@ -13,7 +14,43 @@ export function Dashboard() {
   const [history, setHistory] = useState<{ indicator: string; verdict: string }[]>([])
   const [openRow, setOpenRow] = useState<Set<number>>(new Set())
 
-  function runLookup(val?: string) {
+  // 1. Fetch historical lookups from Supabase on initial page load
+  useEffect(() => {
+    async function loadRecentLookups() {
+      const { data, error } = await supabase
+        .from('lookups')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (error) {
+        console.error('Failed to load lookups from Supabase:', error.message)
+        return
+      }
+
+      if (data && data.length > 0) {
+        const loadedResults: LookupResult[] = data.map(item => item.full_data || {
+          indicator: item.indicator,
+          type: item.type,
+          verdict: item.verdict,
+          confidence: item.confidence,
+          reports: item.reports,
+          lastSeen: item.last_seen,
+          firstSeen: 'N/A',
+          categories: [],
+          sources: []
+        })
+
+        setResults(loadedResults)
+        setHistory(data.map(d => ({ indicator: d.indicator, verdict: d.verdict })))
+      }
+    }
+
+    loadRecentLookups()
+  }, [])
+
+  // 2. Perform lookup and save result into Supabase
+  async function runLookup(val?: string) {
     const v = (val ?? query).trim().toLowerCase()
     if (!v) return
     const type = detectType(v)
@@ -24,12 +61,44 @@ export function Dashboard() {
     else if (type === 'domain') r = DEMO_DB.domains[v]
     else if (type === 'hash') r = DEMO_DB.hashes[v]
 
-    if (!r) r = { indicator: v, type, verdict: 'unknown', confidence: 0, reports: 0, categories: [], firstSeen: 'N/A', lastSeen: 'N/A', sources: [{ name: 'AbuseIPDB', detail: 'No data' }, { name: 'OTX', detail: 'No data' }, { name: 'VirusTotal', detail: 'No data' }] }
+    if (!r) {
+      r = {
+        indicator: v,
+        type,
+        verdict: 'unknown',
+        confidence: 0,
+        reports: 0,
+        categories: [],
+        firstSeen: 'N/A',
+        lastSeen: 'N/A',
+        sources: [
+          { name: 'AbuseIPDB', detail: 'No data' },
+          { name: 'OTX', detail: 'No data' },
+          { name: 'VirusTotal', detail: 'No data' }
+        ]
+      }
+    }
 
-    setResults(prev => [r!, ...prev])
-    if (!history.find(h => h.indicator === v)) setHistory(prev => [{ indicator: v, verdict: r!.verdict }, ...prev])
+    // Update UI immediately
+    setResults(prev => [r!, ...prev.filter(item => item.indicator !== v)])
+    setHistory(prev => [{ indicator: v, verdict: r!.verdict }, ...prev.filter(item => item.indicator !== v)])
     setTab('lookup')
     setOpenRow(new Set())
+
+    // Persist to Supabase
+    try {
+      await supabase.from('lookups').insert({
+        indicator: r.indicator,
+        type: r.type,
+        verdict: r.verdict,
+        confidence: r.confidence,
+        reports: r.reports ?? 0,
+        last_seen: r.lastSeen,
+        full_data: r
+      })
+    } catch (err) {
+      console.error('Error saving lookup to Supabase:', err)
+    }
   }
 
   function quickSearch(v: string) { setQuery(v); runLookup(v) }
@@ -98,8 +167,8 @@ export function Dashboard() {
                   <thead><tr><th>INDICATOR</th><th>TYPE</th><th>VERDICT</th><th>CONFIDENCE</th><th>REPORTS</th><th>LAST SEEN</th></tr></thead>
                   <tbody>
                     {results.map((r, i) => (
-                      <>{/* Fragment key on outer */}
-                        <tr key={`r-${i}`} onClick={() => toggleRow(i)}>
+                      <tbody key={`grp-${r.indicator}-${i}`}>
+                        <tr onClick={() => toggleRow(i)}>
                           <td className="indicator">{r.indicator.length > 36 ? r.indicator.slice(0, 36) + '...' : r.indicator}</td>
                           <td><span className={`type-tag ${tcClass[r.type] || ''}`}>{r.type.toUpperCase()}</span></td>
                           <td><span className={`v-tag ${vcClass[r.verdict] || 'v-unk'}`}>{r.verdict.toUpperCase()}</span></td>
@@ -107,7 +176,7 @@ export function Dashboard() {
                           <td>{r.reports ?? 0}</td>
                           <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{r.lastSeen}</td>
                         </tr>
-                        <tr key={`d-${i}`} className={`detail-row ${openRow.has(i) ? 'open' : ''}`}>
+                        <tr className={`detail-row ${openRow.has(i) ? 'open' : ''}`}>
                           <td colSpan={6}>
                             <div className="detail-grid">
                               <div className="detail-item"><label>INDICATOR</label><span style={{ wordBreak: 'break-all', fontFamily: 'var(--mono)' }}>{r.indicator}</span></div>
@@ -122,7 +191,7 @@ export function Dashboard() {
                             {r.sources && <div style={{ marginTop: 12 }}>{r.sources.map(s => <div key={s.name} className="source-row"><span className="source-name">{s.name}</span><span className="source-detail">{s.detail}</span></div>)}</div>}
                           </td>
                         </tr>
-                      </>
+                      </tbody>
                     ))}
                   </tbody>
                 </table>
