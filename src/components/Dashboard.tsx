@@ -14,7 +14,7 @@ export function Dashboard() {
   const [history, setHistory] = useState<{ indicator: string; verdict: string }[]>([])
   const [openRow, setOpenRow] = useState<Set<number>>(new Set())
 
-  // 1. Fetch historical lookups from Supabase on initial page load
+  // Load past searches from Supabase on mount
   useEffect(() => {
     async function loadRecentLookups() {
       const { data, error } = await supabase
@@ -29,7 +29,6 @@ export function Dashboard() {
       }
 
       if (data && data.length > 0) {
-        // Read raw_data to match your exact SQL schema
         const loadedResults: LookupResult[] = data.map(item => item.raw_data || {
           indicator: item.indicator,
           type: item.type,
@@ -50,7 +49,7 @@ export function Dashboard() {
     loadRecentLookups()
   }, [])
 
-  // 2. Perform lookup and save result into Supabase
+  // Run lookup and persist to Supabase
   async function runLookup(val?: string) {
     const v = (val ?? query).trim().toLowerCase()
     if (!v) return
@@ -80,13 +79,11 @@ export function Dashboard() {
       }
     }
 
-    // Update UI immediately
     setResults(prev => [r!, ...prev.filter(item => item.indicator !== v)])
     setHistory(prev => [{ indicator: v, verdict: r!.verdict }, ...prev.filter(item => item.indicator !== v)])
     setTab('lookup')
     setOpenRow(new Set())
 
-    // Persist to Supabase using your exact column name: raw_data
     try {
       const { error } = await supabase.from('lookups').insert({
         indicator: r.indicator,
@@ -110,7 +107,7 @@ export function Dashboard() {
   const sevClass: Record<string, string> = { crit: 'sev-crit', high: 'sev-high', med: 'sev-med' }
 
   return (
-    <div className="soc">
+    <div className="soc" style={{ display: 'flex', width: '100%', minHeight: '100vh', overflowX: 'hidden' }}>
       <div className="sidebar">
         <div className="sidebar-header"><div className="sidebar-logo" /><span className="sidebar-title">THREAT PULSE</span></div>
         <div className="sidebar-section">SEARCH</div>
@@ -135,7 +132,7 @@ export function Dashboard() {
         <div className="sidebar-footer">built by Chrissy<br />v1.0 &middot; demo mode</div>
       </div>
 
-      <div className="main-panel">
+      <div className="main-panel" style={{ marginLeft: '260px', width: 'calc(100% - 260px)', minWidth: 0, overflowX: 'hidden', display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         <div className="status-bar">
           <div className="status-left">
             <div className="status-dot" /><span className="status-label">ONLINE</span>
@@ -162,7 +159,7 @@ export function Dashboard() {
                 </div>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{ overflowX: 'auto', width: '100%' }}>
                 <table className="data-table" style={{ width: '100%', tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
@@ -176,7 +173,7 @@ export function Dashboard() {
                   </thead>
                   <tbody>
                     {results.map((r, i) => (
-                      <tr key={`row-wrapper-${r.indicator}-${i}`} style={{ display: 'contents' }}>
+                      <tbody key={`grp-${r.indicator}-${i}`} style={{ display: 'contents' }}>
                         <tr onClick={() => toggleRow(i)}>
                           <td className="indicator" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                             {r.indicator}
@@ -198,11 +195,11 @@ export function Dashboard() {
                               <div className="detail-item"><label>FIRST SEEN</label><span style={{ fontFamily: 'var(--mono)' }}>{r.firstSeen}</span></div>
                               <div className="detail-item"><label>LAST SEEN</label><span style={{ fontFamily: 'var(--mono)' }}>{r.lastSeen}</span></div>
                             </div>
-                            {r.categories.length > 0 && <div className="cat-tags">{r.categories.map(c => <span key={c} className="cat-tag">{c}</span>)}</div>}
+                            {r.categories && r.categories.length > 0 && <div className="cat-tags">{r.categories.map(c => <span key={c} className="cat-tag">{c}</span>)}</div>}
                             {r.sources && <div style={{ marginTop: 12 }}>{r.sources.map(s => <div key={s.name} className="source-row"><span className="source-name">{s.name}</span><span className="source-detail">{s.detail}</span></div>)}</div>}
                           </td>
                         </tr>
-                      </tr>
+                      </tbody>
                     ))}
                   </tbody>
                 </table>
@@ -222,11 +219,23 @@ export function Dashboard() {
             ))
           )}
         </div>
-        <div className="about">
-          <div className="about-text" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+        <div className="about" style={{ padding: '24px 20px', width: '100%', boxSizing: 'border-box' }}>
+          <p style={{ 
+            maxWidth: '560px', 
+            width: '100%', 
+            fontSize: '13px', 
+            lineHeight: '1.7', 
+            color: 'var(--t2)', 
+            whiteSpace: 'normal', 
+            wordBreak: 'break-word',
+            display: 'block',
+            margin: '0 0 8px 0'
+          }}>
             I wanted a single place to check indicators without bouncing between five different tabs. This tool consolidates results from open threat intelligence sources so you can see at a glance whether an IP, domain, or hash has been flagged.
+          </p>
+          <div className="about-meta" style={{ fontSize: '11px', color: 'var(--t3)' }}>
+            Sources: AbuseIPDB &middot; AlienVault OTX &middot; VirusTotal (demo)
           </div>
-          <div className="about-meta">Sources: AbuseIPDB &middot; AlienVault OTX &middot; VirusTotal (demo)</div>
         </div>
       </div>
     </div>
