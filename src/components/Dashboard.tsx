@@ -29,13 +29,14 @@ export function Dashboard() {
       }
 
       if (data && data.length > 0) {
-        const loadedResults: LookupResult[] = data.map(item => item.full_data || {
+        // Read raw_data to match your exact SQL schema
+        const loadedResults: LookupResult[] = data.map(item => item.raw_data || {
           indicator: item.indicator,
           type: item.type,
           verdict: item.verdict,
           confidence: item.confidence,
-          reports: item.reports,
-          lastSeen: item.last_seen,
+          reports: 0,
+          lastSeen: 'Recently',
           firstSeen: 'N/A',
           categories: [],
           sources: []
@@ -85,17 +86,16 @@ export function Dashboard() {
     setTab('lookup')
     setOpenRow(new Set())
 
-    // Persist to Supabase
+    // Persist to Supabase using your exact column name: raw_data
     try {
-      await supabase.from('lookups').insert({
+      const { error } = await supabase.from('lookups').insert({
         indicator: r.indicator,
         type: r.type,
         verdict: r.verdict,
         confidence: r.confidence,
-        reports: r.reports ?? 0,
-        last_seen: r.lastSeen,
-        full_data: r
+        raw_data: r
       })
+      if (error) console.error('Supabase insert error:', error.message)
     } catch (err) {
       console.error('Error saving lookup to Supabase:', err)
     }
@@ -127,7 +127,7 @@ export function Dashboard() {
         <div>
           {history.map(h => (
             <div key={h.indicator} className="history-item" onClick={() => quickSearch(h.indicator)}>
-              <span>{h.indicator.length > 22 ? h.indicator.slice(0, 22) + '...' : h.indicator}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>{h.indicator}</span>
               <span className={`v-tag ${vcClass[h.verdict] || 'v-unk'}`}>{h.verdict.slice(0, 3).toUpperCase()}</span>
             </div>
           ))}
@@ -163,13 +163,24 @@ export function Dashboard() {
               </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
-                <table className="data-table">
-                  <thead><tr><th>INDICATOR</th><th>TYPE</th><th>VERDICT</th><th>CONFIDENCE</th><th>REPORTS</th><th>LAST SEEN</th></tr></thead>
+                <table className="data-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '35%' }}>INDICATOR</th>
+                      <th style={{ width: '12%' }}>TYPE</th>
+                      <th style={{ width: '13%' }}>VERDICT</th>
+                      <th style={{ width: '12%' }}>CONFIDENCE</th>
+                      <th style={{ width: '12%' }}>REPORTS</th>
+                      <th style={{ width: '16%' }}>LAST SEEN</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {results.map((r, i) => (
-                      <tbody key={`grp-${r.indicator}-${i}`}>
+                      <tr key={`row-wrapper-${r.indicator}-${i}`} style={{ display: 'contents' }}>
                         <tr onClick={() => toggleRow(i)}>
-                          <td className="indicator">{r.indicator.length > 36 ? r.indicator.slice(0, 36) + '...' : r.indicator}</td>
+                          <td className="indicator" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                            {r.indicator}
+                          </td>
                           <td><span className={`type-tag ${tcClass[r.type] || ''}`}>{r.type.toUpperCase()}</span></td>
                           <td><span className={`v-tag ${vcClass[r.verdict] || 'v-unk'}`}>{r.verdict.toUpperCase()}</span></td>
                           <td>{r.confidence}%</td>
@@ -191,7 +202,7 @@ export function Dashboard() {
                             {r.sources && <div style={{ marginTop: 12 }}>{r.sources.map(s => <div key={s.name} className="source-row"><span className="source-name">{s.name}</span><span className="source-detail">{s.detail}</span></div>)}</div>}
                           </td>
                         </tr>
-                      </tbody>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -203,7 +214,7 @@ export function Dashboard() {
                 <div className="feed-time">{f.time}</div>
                 <div className="feed-body">
                   <div className="feed-title">{f.title}</div>
-                  <div className="feed-desc">{f.desc}</div>
+                  <div className="feed-desc" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{f.desc}</div>
                   <div className="feed-meta">{f.source}</div>
                 </div>
                 <span className={`feed-sev ${sevClass[f.sev] || 'sev-med'}`}>{f.sev.toUpperCase()}</span>
@@ -212,7 +223,9 @@ export function Dashboard() {
           )}
         </div>
         <div className="about">
-          <div className="about-text">I wanted a single place to check indicators without bouncing between five different tabs. This tool consolidates results from open threat intelligence sources so you can see at a glance whether an IP, domain, or hash has been flagged.</div>
+          <div className="about-text" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+            I wanted a single place to check indicators without bouncing between five different tabs. This tool consolidates results from open threat intelligence sources so you can see at a glance whether an IP, domain, or hash has been flagged.
+          </div>
           <div className="about-meta">Sources: AbuseIPDB &middot; AlienVault OTX &middot; VirusTotal (demo)</div>
         </div>
       </div>
